@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html >
+  <head>
+    <meta charset="UTF-8">
+    <title>SoundCompare</title> 
+    <style>
+      body{
+        background-color: #888888;
+      }
+      #tools, #player {
+        padding: 5px;
+      }
+      audio {
+        width: 400px;
+      }
+      .tracklist {
+        font-size: 14px;
+        padding: 10px;
+        border: 5px solid black;
+        width: 410px;
+        margin: 5px;
+      }
+      .green {
+        border: 5px solid rgb(50,255,50);
+        background-color: rgb(50,255,50);
+      }
+      .red {
+        border: 5px solid rgb(255,50,50);
+        background-color: rgb(255,50,50);
+      }
+    </style> 
+  </head>
+  <body>
+  <center>
+  <div>
+    <div id="tools">
+      <button id="playAll">Play All</button>
+      <button id="filter">Filter</button>
+      <button id="xray">Xray</button>
+    </div>
+
+    <div id="player">
+    <form>
+
+      <select id="track1source" name="track1source" class="tracklist green">            
+      </select>
+      <br/>
+      <audio id="track1" class="green" controls="controls"></audio>
+      <br/>      
+      <select id="track2source" name="track2source" class="tracklist red">
+      </select>
+      <br/>
+      <audio id="track2" class="red" controls="controls"></audio>
+    </div>
+
+    <input type="range" id="xrayslider" style="width: 100%; display: none;"/>
+
+    <canvas id="visualization"></canvas>
+  </div>
+  </center>
+  <script src="https://s3-us-west-1.amazonaws.com/dolbydeveloper/1.1.0/js/dolby.min.js"></script>
+<script>
+
+(function() {
+
+  var WIDTH = document.body.clientWidth;
+  var HEIGHT = 400;
+
+  var ddplus = Dolby.checkDDPlus();
+
+  var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  
+  var playerBox = document.getElementById( 'player' );
+  var toolsBox = document.getElementById( 'tools' );
+
+  var track1 = document.getElementById( 'track1' );
+  var track1Src = document.getElementById( 'track1source' );
+
+  var track2 = document.getElementById( 'track2' );
+  var track2Src = document.getElementById( 'track2source' );
+
+  var playAllBtn = document.getElementById( 'playAll' );
+
+  var filterBtn = document.getElementById( 'filter' );
+
+  var xrayBtn = document.getElementById( 'xray' );
+  var xraySliderBtn = document.getElementById( 'xrayslider' );
+
+  var xrayRange = 85;
+  var xrayStart = 1024/4;
+
+  var xray = 0;
+  var filter = 0;  // 0 / 1 to turn filtering off/on
+
+  var codec = getQueryVariable( 'codec' );
+
+  // Play All button
+  playAllBtn.onclick = function(){
+    playAll();
+  }
+
+  // Filter button
+  filterBtn.onclick = function(){
+    setFilter();
+  }
+
+  // Xray button
+  xrayBtn.onclick = function(){
+    setXray();
+  }
+
+  if (track1.canPlayType('audio/mpeg')) {
+    var option = document.createElement("option");
+    option.text = "MP3";
+    option.value = 'sounds/singing.mp3';
+    option.selected = true;
+    track1Src.add(option);
+    var option = document.createElement("option");
+    option.text = "MP3";
+    option.value = 'sounds/singing.mp3';
+    option.selected = true;
+    track2Src.add(option);        
+  }
+
+  if (track1.canPlayType('audio/ogg')) {
+    var option = document.createElement("option");
+    option.text = "OGG";
+    option.value = 'sounds/singing.ogg';
+    track1Src.add(option);
+    var option = document.createElement("option");
+    option.text = "OGG";
+    if( codec == "OGG" ){
+      option.selected = true;
+    }
+    option.value = 'sounds/singing.ogg';
+    track2Src.add(option);        
+  }
+
+  if (track1.canPlayType('audio/mp4')) {
+    var option = document.createElement("option");
+    option.text = "AAC";
+    option.value = 'sounds/singing.aac';
+    track1Src.add(option);
+    var option = document.createElement("option");
+    option.text = "AAC";
+    if( codec == "AAC" ){
+      option.selected = true;
+    }
+    option.value = 'sounds/singing.aac';
+    track2Src.add(option);        
+  }
+
+  if (track1.canPlayType('audio/wav')) {
+    var option = document.createElement("option");
+    option.text = "WAV";
+    option.value = 'sounds/singing.wav';
+    track1Src.add(option);
+    var option = document.createElement("option");
+    option.text = "WAV";
+    if( codec == "WAV" ){
+      option.selected = true;
+    }    
+    option.value = 'sounds/singing.wav';
+    track2Src.add(option);        
+  }
+
+  // Dolby Digital Plus Check
+  if( ddplus === true ) {
+    
+    var option = document.createElement("option");
+    option.text = "Dolby Digital Plus";
+    option.value = 'sounds/singing_Dolby.mp4';
+    option.selected = true;
+    track1Src.add(option);
+
+    var option = document.createElement("option");
+    option.text = "Dolby Digital Plus";
+    option.value = 'sounds/singing_Dolby.mp4';
+    track2Src.add(option);
+
+  }
+
+  // Setup track 1
+  track1Src.onchange = function(){
+    refreshTracks();
+  }
+  track1.src = track1Src.value;
+  track1.load();
+  track1.onplay = function(){ 
+    draw();
+  }
+
+  var analyser1 = audioCtx.createAnalyser();
+  var source1 = audioCtx.createMediaElementSource( track1 )
+  source1.connect(analyser1)
+  analyser1.connect(audioCtx.destination)
+  analyser1.fftSize = 2048; 
+
+  var bufferLength1 = analyser1.frequencyBinCount;
+  var dataArray1 = new Uint8Array(bufferLength1);
+
+  // setup track 2
+  track2Src.onchange = function(){
+    refreshTracks();
+  }  
+  track2.src = track2Src.value;
+  track2.load();
+  track2.onplay = function(){ 
+    draw();
+  }
+
+  var analyser2 = audioCtx.createAnalyser();
+  var source2 = audioCtx.createMediaElementSource( track2 )
+  source2.connect(analyser2)
+  analyser2.connect(audioCtx.destination)
+  analyser2.fftSize = 2048; 
+
+  var bufferLength2 = analyser2.frequencyBinCount;
+  var dataArray2 = new Uint8Array(bufferLength2);
+
+  // create slider
+
+  xraySliderBtn.min = 0;
+  xraySliderBtn.max = 1024/2;
+  xraySliderBtn.step = .1;
+  xraySliderBtn.value = xrayStart;
+  xraySliderBtn.onchange = function(){
+    xrayStart = this.value;
+  }
+
+
+  // canvas
+  canvas = document.getElementById('visualization');
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  canvasCtx = canvas.getContext('2d');
+  canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+  canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  function draw() {
+    drawVisual = requestAnimationFrame(draw);
+
+    analyser1.getByteFrequencyData(dataArray1);
+    analyser2.getByteFrequencyData(dataArray2);
+
+    canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+    canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    var barWidth = (WIDTH / bufferLength1) * 1;
+    var barHeight1;
+    var barHeight2;
+
+    var x = 0;
+    var color = '';
+
+    for(var i = 0; i < bufferLength1; i++) {
+
+      barHeight1 = dataArray1[i];
+      barHeight2 = dataArray2[i];
+
+      color = 'rgb(50,255,50)';
+      if( xray && i >= xrayStart && i <= parseInt(xrayStart) + parseInt(xrayRange) ) {
+        color = 'rgba(255,255,255,.5)';
+      }
+
+      canvasCtx.strokeStyle = color;
+      canvasCtx.strokeRect( x , ( HEIGHT - barHeight1 )/2 , barWidth , barHeight1 );      
+
+      color = 'rgb(255,50,50)';
+      if( xray && i >= xrayStart && i <= parseInt(xrayStart) + parseInt(xrayRange) ) {
+        color = 'rgba(255,255,255,.5)';
+      }
+      canvasCtx.strokeStyle = color;
+      canvasCtx.strokeRect( x , ( HEIGHT - barHeight2 )/2 , barWidth , barHeight2 );
+
+      barDiffHeight = Math.abs( barHeight2 - barHeight1 );
+
+      if( filter === 1 
+          && !track1.paused 
+          && !track2.paused 
+           ) {
+
+        color = 'rgba(255,255,255,.25)';
+        canvasCtx.fillStyle = color;
+        canvasCtx.fillRect( x , ( HEIGHT - barDiffHeight ) , barWidth , barDiffHeight );
+
+      }
+
+      x += barWidth + 1;
+
+    }
+
+  };
+
+  function refreshTracks() {
+
+    pauseAll();
+
+    track1.src = track1Src.value;
+    track2.src = track2Src.value;
+
+    track1.load();
+    track2.load();
+
+    console.log( 'Track1 : ' + track1.src );
+    console.log( 'Track2 : ' + track2.src );
+
+  }
+
+  function pauseAll() {
+    track1.pause();
+    track2.pause();
+  }
+
+  function playAll(){
+
+    track1.currentTime = 0;
+    track2.currentTime = 0; 
+
+    console.log( track1.src );
+    console.log( track2.src );
+
+    track1.play();
+    track2.play();
+  }
+
+  function setXray(){
+    xray ^= true;    
+    if( xray ) {
+      document.getElementById('xrayslider').style.display = 'block';
+    } else {
+      document.getElementById('xrayslider').style.display = 'none';
+    }
+  }
+  function setFilter(){
+    filter ^= true;
+  }
+
+  function getQueryVariable(variable){
+         var query = window.location.search.substring(1);
+         var vars = query.split("&");
+         for (var i=0;i<vars.length;i++) {
+                 var pair = vars[i].split("=");
+                 if(pair[0] == variable){return pair[1];}
+         }
+         return(false);
+  }
+
+})();
+</script>
+
+</script>
+</body>
+</html>
+
+<!-- 
+TOPICS
+
+fftSize
+=======
+The fftSize property of the AnalyserNode interface is an unsigned long value representing the size of the FFT (Fast Fourier Transform) to be used to determine the frequency domain.
+
+The fftSize property's value must be a non-zero power of 2 in a range from 32 to 2048; its default value is 2048. 
+
+
+
+-->
+
