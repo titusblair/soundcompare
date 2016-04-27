@@ -1,5 +1,7 @@
 ## Demo
 
+![alt tag](http://i.imgur.com/NINVvVl.png)
+
 http://titusblair.github.io/demos/soundcompare/
 
 ## Synopsis
