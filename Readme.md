@@ -17,4 +17,5 @@ Check the code out and run the index.html file and you should be good to go.
 ## Contributors
 
 Titus Blair 
-@titusblair on Twitter
+http://titusblair.com/
+https://twitter.com/titusblair
